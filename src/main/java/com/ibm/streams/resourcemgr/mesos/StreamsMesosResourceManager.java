@@ -100,6 +100,8 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 		Map<String, String> argsMap = new HashMap<String, String>();
 		Properties props = null;
 		
+		LOG.info(getTitleAndVersionString());
+		
 		LOG.trace("Arguments: " + Arrays.toString(args));
 		LOG.trace("Enironment: " + envs);
 
@@ -971,6 +973,43 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 	//////////////////////////////////////
 	/// CUSTOM COMMANDS IMPLEMENTATION ///
 	//////////////////////////////////////
+	
+	// Get value of Implementation-Title and Version from jar MANIFEST.mf file
+	// This needs to be in the outer-most jar file
+	// In this build, we create a jar-with-depencencies, so it needs
+	// to be in that jar file
+	static private String getImplementationVersion() {
+		//Package p = getClass().getPackage();
+		Package p = StreamsMesosResourceManager.class.getPackage();
+		StringBuilder str = new StringBuilder();
+		String version = p.getImplementationVersion();
+				if (version != null && version.length() > 0)
+					str.append(version);
+				else
+					str.append("not specified");
+		return str.toString();
+	}
+	
+	static private String getImplementationTitle() {
+		//Package p = getClass().getPackage();
+		Package p = StreamsMesosResourceManager.class.getPackage();
+		StringBuilder str = new StringBuilder();
+		String title = p.getImplementationTitle();
+				if (title != null && title.length() > 0)
+					str.append(title);
+				else
+					str.append(StreamsMesosConstants.RESOURCE_MANAGER_NAME);
+		return str.toString();
+	}
+
+	static private String getTitleAndVersionString() {
+		StringBuilder str = new StringBuilder();
+		str.append("Resource Manager: ");
+		str.append(getImplementationTitle());
+		str.append(", Version: ");
+		str.append(getImplementationVersion());
+		return str.toString();
+	}
 	
 	// Future put it its own class
 	public void getResourceState(ObjectNode request, ObjectNode response, ClientInfo client) {

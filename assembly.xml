@@ -73,7 +73,13 @@ under the License.
 	    <lineEnding>keep</lineEnding>
 	    <fileMode>644</fileMode>
 	  </fileSet>
-	  
 	</fileSets>
-	
+	<files>
+	  <file>
+	    <source>${basedir}/target/classes/version</source>
+	    <outputDirectory>etc</outputDirectory>
+	    <destName>version</destName>
+	    <filtered>false</filtered>
+	  </file>
+	</files>
 </assembly>

@@ -26,6 +26,9 @@ package com.ibm.streams.resourcemgr.mesos;
  *
  */
 public class StreamsMesosConstants {
+	/* Resource Manager Default Name */
+	public static final String
+		RESOURCE_MANAGER_NAME = "Streams Mesos Resource Manager";
 
 	/* Turn these into arguments */
 	public static final String
@@ -155,6 +158,9 @@ public class StreamsMesosConstants {
 		CUSTOM_RESULT_RESOURCE_TAGS="tags",
 		CUSTOM_RESULT_RESOURCE_CORES="cores",
 		CUSTOM_RESULT_RESOURCE_MEMORY="memory",
+		
+		CUSTOM_COMMAND_GET_VERSION="getversion",
+		CUSTOM_RESULT_VERSION_STRING="versionString",
 
 		CUSTOM_COMMAND_RETURN_CODE="rc"
 	;

@@ -22,7 +22,7 @@ under the License.
   <groupId>streamsx.resourcemanager.mesos</groupId>
   <artifactId>streams-on-mesos</artifactId>
   <packaging>jar</packaging>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.5.0-SNAPSHOT</version>
   <name>streams-on-mesos</name>
   <description>IBM Streams Resource Manager as a Mesos Framework</description>
   <properties>
@@ -93,8 +93,35 @@ under the License.
   	</dependency>
   </dependencies>
   <build>
-  <sourceDirectory>.</sourceDirectory>
-  <plugins>
+  	<sourceDirectory>.</sourceDirectory>
+  	<!-- Create version file in the classes directory -->
+  	<resources>
+  		<resource>
+  			<directory>src/main/resources</directory>
+  			<filtering>true</filtering>
+  			<includes>
+  				<include>**/version</include>
+  			</includes>
+  		</resource>
+  	</resources>
+  	<plugins>
+  		<plugin>
+  			<artifactId>maven-jar-plugin</artifactId>
+  			<version>2.1</version>
+  			<configuration>
+  				<archive>
+  					<manifestEntries>
+  						<Implementation-Title>
+  							${artifactId}
+  						</Implementation-Title>
+  						<Implementation-Version>
+  							${version}
+  						</Implementation-Version>
+  					</manifestEntries>
+  				</archive>
+  			</configuration>
+  		</plugin>
+  
   		<plugin>
   			<groupId>org.apache.maven.plugins</groupId>
   			<artifactId>maven-assembly-plugin</artifactId>
@@ -110,6 +137,16 @@ under the License.
   						<descriptorRefs>
   							<descriptorId>jar-with-dependencies</descriptorId>
   						</descriptorRefs>
+  						<archive>
+  							<manifestEntries>
+  								<Implementation-Title>
+  									${artifactId}
+  								</Implementation-Title>
+  								<Implementation-Version>
+  									${version}
+  								</Implementation-Version>
+  							</manifestEntries>
+  						</archive>
   					</configuration>
   				</execution>
 				<!-- Create .tar.gz with scripts and properties -->
@@ -127,7 +164,10 @@ under the License.
  					</configuration>
  				</execution>
   			</executions>
-  		</plugin>
+  		</plugin> 
+  		<!--  Install Phase Plugins -->
+  		<!--  These are only for quick local testing -->
+  		<!--  Package phase should have created .tar.gz file for distribution -->
 		<plugin>
 			<artifactId>maven-dependency-plugin</artifactId>
 			<executions>
@@ -140,6 +180,7 @@ under the License.
 						<goal>copy</goal>
 					</goals>
 					<configuration>
+					  <outputDirectory>lib</outputDirectory>
 						<artifactItems>
 							<artifactItem>
 								<groupId>${project.groupId}</groupId>
@@ -150,7 +191,31 @@ under the License.
 								<overWrite>true</overWrite>
 							</artifactItem>
 						</artifactItems>
-						<outputDirectory>lib</outputDirectory>
+					</configuration>
+				</execution>
+			</executions>
+		</plugin>
+		<plugin>
+			<artifactId>maven-resources-plugin</artifactId>
+			<executions>
+				<execution>
+					<id>install-versionfile</id>
+					<phase>install</phase>
+					<goals>
+						<goal>copy-resources</goal>
+					</goals>
+					<configuration>
+					  <outputDirectory>etc</outputDirectory>
+                      <resources>
+                        <resource>
+                          <directory>target/classes</directory>
+                          <filtering>false</filtering>
+                          <includes>
+                            <include>version</include>
+                          </includes>
+                        </resource>
+                      </resources>
+                      <overwrite>true</overwrite>
 					</configuration>
 				</execution>
 			</executions>
@@ -164,6 +229,12 @@ under the License.
 					<fileset>
 						<directory>lib</directory>
 						<followSymlinks>false</followSymlinks>
+					</fileset>
+					<fileset>
+						<directory>etc</directory>
+						<includes>
+							<include>version</include>
+						</includes>
 					</fileset>
 				</filesets>
 			</configuration>
