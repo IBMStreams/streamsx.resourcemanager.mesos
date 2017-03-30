@@ -5,7 +5,7 @@
 #   Ensure that Hadoop classpath is available
 #
 from os.path import isfile, dirname, realpath, expanduser, sep
-from os import system, getenv
+from os import system, getenv, getcwd
 import sys
 import getopt;
 from smtpd import Options
@@ -20,7 +20,8 @@ streams_mesos_jar_prefix = "streams-on-mesos-"
 streams_mesos_jar_suffix = "-jar-with-dependencies.jar"
 streams_mesos_jar_basename="streams-on-mesos-0.5.0-SNAPSHOT-jar-with-dependencies.jar"
 type = "mesos"
-versionfilename = "../etc/version"
+versiondirectory = "../etc"
+versionfilename = "version"
 # Fallback in case version file not found, this may not be up to date
 version = "0.5.0-SNAPSHOT"
 
@@ -40,18 +41,19 @@ COMMANDS = {
 			 + "\t[-d,--domain-id <optional: domain identifier>]\n"
 			 + "\t[--type <type identifier>] Default: mesos\n"
 			 + "\t[--deploy]\n"
-			 + "\t[--properties <optional: path to Streams Mesos Scheduler Properties>]"
+			 + "\t[--properties <optional: path to Streams Mesos Scheduler Properties>]\n"
+			 + "\t[--fg]\n"
 			 ),
 	"stop": Command("stop",  "Stops the Streams Mesos Framework.",
 			"\t[--zkconnect {<host>:<port>},...]\n"
 			+ "\t[-d,--domain-id <optional: domain identifier>]\n"
 			+ "\t[--type <type identifier>] Default: mesos\n"
-			+ "\t[--force]"
+			+ "\t[--force]\n"
 			),
 	"status": Command("status",  "Displays status of the Streams Resource Manager Process.",
 			"\t[--zkconnect {<host>:<port>},...]\n"
 			+ "\t[-d,--domain-id <optional: domain identifier> | --all]\n"
-			+ "\t[--type <type identifier>] Default: mesos"
+			+ "\t[--type <type identifier>] Default: mesos\n"
  
 			),
 	"getresourcestate": Command("getresourcestate", "Displays state of all resources and associated mesos tasks (displays old resources at this time also)",
@@ -62,7 +64,7 @@ COMMANDS = {
 			+ "\n" 
 			+ "\tOptions and Arguments\n"
 			+ "\t -l:\n"
-			+ "\t\tDisplay long version of output including tags"
+			+ "\t\tDisplay long version of output including tags\n"
 			),
 	"version": Command("version", "Display version of the streams-on-mesos script.","")
 	}
@@ -84,10 +86,12 @@ def test_var(var, msg):
 		
 # Open version file if it exists
 try:
-	if isfile(versionfilename):
-		version = open(versionfilename).read().strip()
+	dir_path = dirname(realpath(__file__))
+	versionfile = dir_path + "/" + versiondirectory + "/" + versionfilename
+	if isfile(versionfile):
+		version = open(versionfile).read().strip()
 	else:
-		print "WARNING: version file not found in ../etc"
+		print "WARNING: version file not found: ", versionfile
 except getopt.GetoptError as err:
 	sys.exit(err)
 	
@@ -103,7 +107,7 @@ if len(sys.argv) < 2:
 # validate arguments
 try:
 	if(sys.argv[1] == "start"):
-		options, remainder = getopt.getopt(sys.argv[2:], "d:", ["zkconnect=", "domain-id=", "properties=", "type=", "master=", "deploy"])
+		options, remainder = getopt.getopt(sys.argv[2:], "d:", ["zkconnect=", "domain-id=", "properties=", "type=", "master=", "deploy", "fg"])
 	elif(sys.argv[1] == "stop"):
 		options, remainder = getopt.getopt(sys.argv[2:], "d:", ["zkconnect=", "domain-id=", "type=", "force"])
 	elif(sys.argv[1] == "status"):
@@ -147,6 +151,7 @@ zk = getenv("STREAMS_ZKCONNECT")
 wasZkSet = False
 wasPropSet = False
 wasTypeSet = False
+wasFgSet = False
 
 # Future get master from properties file?
 master=None
@@ -184,6 +189,8 @@ for opt, arg in options:
 		wasAllSet = True
 	elif opt == "-l":
 		wasLongSet = True
+	elif opt == "--fg":
+		wasFgSet = True
 	else:
 		sys.exit("Invalid option: " + opt)
 
@@ -248,12 +255,14 @@ if(sys.argv[1] == "start"):
 		command = command+ " --master " + master
 	if not wasTypeSet:
 		command = command + " --type " + type
-		
-	# Background it
-	command = command + " &"
+	if not wasFgSet:
+		command = command + " &"
 	
 	rc = system(command)
-	if(rc != 0):
+	if(rc == 0):
+		if not wasFgSet:
+			print "The Streams Mesos Resource Manager has been submitted as a background process.  Use the 'streams-on-mesos status' command to view process information."
+	else:
 		sys.exit(1)
 
 #

@@ -13,6 +13,11 @@
 	* Only when we have a resource request that needs resources do we tell Mesos to send us offers
 * DONE -Streams Resource Manager custom commands to get internal state of allResources list, etc.
 * DONE - Added title and version to manifest and retrieve in Java
+* DONE - Add Flag to run in foreground or background
+	* foreground is needed for marathon
+* Test with marathon
+* Starting Instance
+	* No resources with the application tag are available in the StreamsInstance instance for the following domain: StreamsDomain. Using mesos_resource_1 as an application resource.
 
 * Running a second time to quickly after stop sometimes generates a mesos log error:
 	I0314 20:31:03.725565   425 master.cpp:2414] Refusing subscription of framework 'IBMStreams' at scheduler-ddc5b371-cce3-4588-a5ea-ec6900974bf7@172.31.29.41:45318: Framework has been removed
