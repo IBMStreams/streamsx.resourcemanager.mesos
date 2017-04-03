@@ -181,32 +181,63 @@ public class StreamsMesosScheduler implements Scheduler {
 	 * 
 	 * @see org.apache.mesos.Scheduler#resourceOffers(org.apache.mesos.
 	 * SchedulerDriver, java.util.List)
+	 *
+	 * Offer observations:
+	 *    * Each offer in the list is from a separate agent (slave)
+	 *    * If this framework has not been configured with a role defined
+	 *      it will only be offered default resources (role: *).
+	 *    * If this framework has been defined with a role then the offers
+	 *      will include multiple resources of the same name:
+	 *        e.g. name: cpu, scalar: 2, role: *
+	 *             name: cpu, scalar: 2, role: myrole
+	 *    * To use the offer, the task needs to be configured
+	 *      to use resources of the coressponding role type
+	 *        e.g. You can not be offered cpu(*): 2 and cpu(myrole): 4
+	 *             and request a task with 6 cpus.
+	 *             You can create a task with <= 2 cpu and role set to * 
+	 *                         or a task with <= 4 cpu and role set to myrole
 	 */
 	@Override
 	public void resourceOffers(SchedulerDriver schedulerDriver, List<Offer> offers) {
 		LOG.trace("Resource Offers Made...");
-		//LOG.trace("***** OFFERS *****");
-		//LOG.trace(offers.toString());
-
-
 		// Loop through offers, and exhaust the offer with resources we can
 		// satisfy
+		
+		// ** NOTE: to handle custom roles, this section of code must change!!!
 		for (Protos.Offer offer : offers) {
+			LOG.trace("OFFER: {host:" + offer.getHostname() +
+					", resourceCount: " + offer.getResourcesCount() +
+					"}");
 			boolean usedOffer = false;
 
 			double offerCpus = 0;
-			double offerMem = 0;
+			double offerMem = 0;			
+			
 			// Extract the resource info from the offer.
+			// Loop through resources in this offer
 			for (Resource r : offer.getResourcesList()) {
 				if (r.getName().equals("cpus")) {
-					offerCpus += r.getScalar().getValue();
-					//offerCpusRole = r.getRole()
+					LOG.trace("      CPU RESOURCE: {role: " + r.getRole() +
+							", scalar: " + r.getScalar().getValue() + "}");
+					if (r.getRole().equals(StreamsMesosConstants.MESOS_ROLE_DEFAULT)) {
+						offerCpus = r.getScalar().getValue();
+					} else {
+						LOG.warn("Received a CPU resource offers with a role (" + r.getRole() + ") that is not equal to the default role (*), this should not happen until we allow a role to be defined for the framework.  Ignoring it.");
+					}
 				} else if (r.getName().equals("mem")) {
-					offerMem += r.getScalar().getValue();
+					LOG.trace("      MEM RESOURCE: {role: " + r.getRole() +
+							", scalar: " + r.getScalar().getValue() + "}");
+					if (r.getRole().equals(StreamsMesosConstants.MESOS_ROLE_DEFAULT)) {
+						offerMem = r.getScalar().getValue();
+					} else {
+						LOG.warn("Received a MEM resource offers with a role (" + r.getRole() + ") that is not equal to the default role (*), this should not happen until we allow a role to be defined for the framework.  Ignoring it.");
+					}
+				} else {
+					LOG.trace("      OTHER RESOURCE: {name: " + r.getName() +
+							", role: " + r.getRole() +
+							"}");
 				}
 			}
-
-			LOG.trace("OFFER: {cpu: " + offerCpus + ", mem: " + offerMem + ", id:" + offer.getId() + "}");
 
 			// Get the list of new requests from the Framework
 			List<StreamsMesosResource> newRequestList = _state.getRequestedResources();

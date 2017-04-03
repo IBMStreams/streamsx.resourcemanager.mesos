@@ -15,25 +15,7 @@
 * DONE - Added title and version to manifest and retrieve in Java
 * DONE - Add Flag to run in foreground or background
 	* foreground is needed for marathon
-* Test with marathon
-* Starting Instance
-	* No resources with the application tag are available in the StreamsInstance instance for the following domain: StreamsDomain. Using mesos_resource_1 as an application resource.
-
-* Running a second time to quickly after stop sometimes generates a mesos log error:
-	I0314 20:31:03.725565   425 master.cpp:2414] Refusing subscription of framework 'IBMStreams' at scheduler-ddc5b371-cce3-4588-a5ea-ec6900974bf7@172.31.29.41:45318: Framework has been removed
-	* and our log reports:
-		I0314 20:31:03.726305  6859 sched.cpp:1171] Got error 'Framework has been removed'
-		I0314 20:31:03.726320  6859 sched.cpp:2021] Asked to abort the driver
-		[INFO ] 20:31:03 Mesos Scheduler receieved an error from Mesos: Framework has been removed
-		I0314 20:31:03.726753  6859 sched.cpp:1987] Asked to stop the driver
-		I0314 20:31:03.726825  6859 sched.cpp:1217] Aborting framework 'd59494dc-6c95-4f93-bb1c-9ac56924c67d-0007'
-		I0314 20:31:03.726848  6859 sched.cpp:1187] Stopping framework 'd59494dc-6c95-4f93-bb1c-9ac56924c67d-0007'
-	* Hard to reproduce
-	
-* Run on framework on Marathon
-
-* Test that when we combine resource offers and add them up but what about if no single
-	offer is as big as the resource we are requesting?
+* DONE - Test with marathon and add sample scripts
 
 
 # 1.0 Release (failover and high availability:
@@ -59,14 +41,17 @@
 	* Cuts down on chatter and offers from Mesos
 * Handle multiple multiple clients (e.g. multiple domains)
 * Instructions and test for PKI authentication
-* Marathon submission of framework
-  * run streams-on-mesos from marathon
 * Web interface to get internal state
 * Persistent State manager - see Symphony Resource Manager
 	* ValidateState
 * High Availability
 	* Mesos - Handle Master failover, Reconcile Tasks, Handle Scheduler failover
 	* Streams - Do the same
+* Allow a role to be set for the framework as well as a configuration parameter
+  to specify what to do with default offers since with a role defined you could
+  get offers of the custom role and the default role (*).  Tasks created must specify 
+  role of resource being used.  (e.g. cant be offered cpu(myrole): 2 and create a task
+  cpu(*): 2.  Must specify cpu(myrole): 2 in the task.  If not it will fail.
 * Convert exceptions to ResourceManagerMessageException, did not see the API for that
 * Enhance Exceptions to use Locale (see Symphony)
 * Handle rolling upgrade scenarios and starting isntances at different versions.  Streams version is part of request for resources.  Generate multiple versions of resource packages to send out
@@ -76,7 +61,9 @@
   * Need test on HDFS
 * Validate Stop
   * Prevent shutdown (unless --force) if we have resources being used
-
+* Starting Instance
+	* No resources with the application tag are available in the StreamsInstance instance for the following domain: StreamsDomain. Using mesos_resource_1 as an application resource.
+	
 ## Failover logic
 	if !reconciling
 		reconciling = true
@@ -110,6 +97,16 @@
 
 
 # ISSUES:
+## Running a second time to quickly after stop sometimes generates a mesos log error:
+	I0314 20:31:03.725565   425 master.cpp:2414] Refusing subscription of framework 'IBMStreams' at scheduler-ddc5b371-cce3-4588-a5ea-ec6900974bf7@172.31.29.41:45318: Framework has been removed
+	* and our log reports:
+		I0314 20:31:03.726305  6859 sched.cpp:1171] Got error 'Framework has been removed'
+		I0314 20:31:03.726320  6859 sched.cpp:2021] Asked to abort the driver
+		[INFO ] 20:31:03 Mesos Scheduler receieved an error from Mesos: Framework has been removed
+		I0314 20:31:03.726753  6859 sched.cpp:1987] Asked to stop the driver
+		I0314 20:31:03.726825  6859 sched.cpp:1217] Aborting framework 'd59494dc-6c95-4f93-bb1c-9ac56924c67d-0007'
+		I0314 20:31:03.726848  6859 sched.cpp:1187] Stopping framework 'd59494dc-6c95-4f93-bb1c-9ac56924c67d-0007'
+	* Hard to reproduce
 ## Tasks that Fail quickly, however pre-maturely telling streams resource allocated
 * Implemented WAIT_ALLOCATED_SECS default of 2 to wait for a task to be running for that long before notifying streams
 	* This prevents notification of allocated and then revoking resource if it fails quickly

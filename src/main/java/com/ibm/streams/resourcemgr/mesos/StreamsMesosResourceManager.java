@@ -668,7 +668,7 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 		builder.setName(Utils.getProperty(_config, StreamsMesosConstants.PROPS_FRAMEWORK_NAME));
 		
 		// Test setting role
-		//builder.setRole("streams");
+		//builder.setRole("bmw");
 		
 		// Get framework ID from state in case this is a failover.
 		String savedFrameworkId = _state.getMesosFrameworkId();
