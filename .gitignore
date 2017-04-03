@@ -1,0 +1,13 @@
+# Eclipse plugin artifacts
+/.pydevproject
+.*.md.html
+
+*.log
+
+# Testing Directory
+/lib
+
+# Maven
+target/
+
+etc/version

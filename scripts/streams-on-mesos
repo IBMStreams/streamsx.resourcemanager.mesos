@@ -1,0 +1,339 @@
+#!/usr/bin/python
+
+# To Do:
+# * If --deploy flag specified and using HDFS to deploy (specified in properties file?) then
+#   Ensure that Hadoop classpath is available
+#
+from os.path import isfile, dirname, realpath, expanduser, sep
+from os import system, getenv, getcwd
+import sys
+import getopt;
+from smtpd import Options
+import subprocess
+import commands
+
+#true if this is part of Streams
+is_prod_switch=False
+
+streams_mesos_manager_class = "com.ibm.streams.resourcemgr.mesos.StreamsMesosResourceManager"
+streams_mesos_jar_prefix = "streams-on-mesos-"
+streams_mesos_jar_suffix = "-jar-with-dependencies.jar"
+streams_mesos_jar_basename="streams-on-mesos-0.5.0-SNAPSHOT-jar-with-dependencies.jar"
+type = "mesos"
+versiondirectory = "../etc"
+versionfilename = "version"
+# Fallback in case version file not found, this may not be up to date
+version = "0.5.0-SNAPSHOT"
+
+
+class Command(object):
+
+	def __init__(self, name, descr, str):
+		self._name = name
+		self._descr = descr
+		self._str = str
+
+
+COMMANDS = {
+	"start": Command("start", "Starts the Streams Mesos Framework (Scheduler). If the --deploy option is specified,\n\tStreams will first be installed on the node before starting the services.",
+			 "\t[--zkconnect {<host>:<port>},...]\n"
+			 + "\t[--master <Mesos Master URI>] //Can be specified in properties file\n"
+			 + "\t[-d,--domain-id <optional: domain identifier>]\n"
+			 + "\t[--type <type identifier>] Default: mesos\n"
+			 + "\t[--deploy]\n"
+			 + "\t[--properties <optional: path to Streams Mesos Scheduler Properties>]\n"
+			 + "\t[--fg]\n"
+			 ),
+	"stop": Command("stop",  "Stops the Streams Mesos Framework.",
+			"\t[--zkconnect {<host>:<port>},...]\n"
+			+ "\t[-d,--domain-id <optional: domain identifier>]\n"
+			+ "\t[--type <type identifier>] Default: mesos\n"
+			+ "\t[--force]\n"
+			),
+	"status": Command("status",  "Displays status of the Streams Resource Manager Process.",
+			"\t[--zkconnect {<host>:<port>},...]\n"
+			+ "\t[-d,--domain-id <optional: domain identifier> | --all]\n"
+			+ "\t[--type <type identifier>] Default: mesos\n"
+ 
+			),
+	"getresourcestate": Command("getresourcestate", "Displays state of all resources and associated mesos tasks (displays old resources at this time also)",
+			"\t[--zkconnect {<host:<port>},...]\n"
+			+ "\t[-d, --domain-id <optional: domain identifier> | --all]\n"
+			+ "\t[--type <type identifier>] Default: mesos\n"
+			+ "\t[-l:]\n"
+			+ "\n" 
+			+ "\tOptions and Arguments\n"
+			+ "\t -l:\n"
+			+ "\t\tDisplay long version of output including tags\n"
+			),
+	"version": Command("version", "Display version of the streams-on-mesos script.","")
+	}
+
+def print_help(msg):
+	print "streams-on-mesos: Streams Resource Manager for Mesos, Version: ", version
+	print "Usage: streams-on-mesos command <options>"
+	print "COMMAND\tOPTIONS"
+	for command in COMMANDS:
+		print command  + ":  " + COMMANDS[command]._descr
+		print COMMANDS[command]._str
+		print
+	print ""
+	sys.exit(msg)
+
+def test_var(var, msg):
+	if(var == None):
+		print_help(msg)
+		
+# Open version file if it exists
+try:
+	dir_path = dirname(realpath(__file__))
+	versionfile = dir_path + "/" + versiondirectory + "/" + versionfilename
+	if isfile(versionfile):
+		version = open(versionfile).read().strip()
+	else:
+		print "WARNING: version file not found: ", versionfile
+except getopt.GetoptError as err:
+	sys.exit(err)
+	
+
+# STREAMS_INSTALL environment variable must be set
+streams_install = getenv("STREAMS_INSTALL")
+test_var(streams_install, "ERROR: STREAMS_INSTALL environment variable not set")
+
+# need at least start/stop argument
+if len(sys.argv) < 2:
+	print_help(0)
+
+# validate arguments
+try:
+	if(sys.argv[1] == "start"):
+		options, remainder = getopt.getopt(sys.argv[2:], "d:", ["zkconnect=", "domain-id=", "properties=", "type=", "master=", "deploy", "fg"])
+	elif(sys.argv[1] == "stop"):
+		options, remainder = getopt.getopt(sys.argv[2:], "d:", ["zkconnect=", "domain-id=", "type=", "force"])
+	elif(sys.argv[1] == "status"):
+		options, remainder = getopt.getopt(sys.argv[2:], "d:", ["zkconnect=", "domain-id=", "type=", "all"])
+	elif(sys.argv[1] == "getresourcestate"):
+		options, remainder = getopt.getopt(sys.argv[2:], "d:l", ["zkconnect=", "domain-id=", "type=", "all"])
+	elif(sys.argv[1] == "version"):
+		options, remainder = getopt.getopt(sys.argv[2:], "",[])
+	else :
+		print_help("Unknown command: " + sys.argv[1])
+		sys.exit()
+except getopt.GetoptError as err:
+	sys.exit(err)
+
+
+
+domain_env=getenv("STREAMS_DOMAIN_ID")
+
+# Need to determine how this is used from containers
+# BRIAN: Comment out for now and make property
+#user_home=getenv("HOME")
+
+
+# determine where to find properties file and .jar if not specified
+streams_mesos_jar = None
+properties = None
+
+streams_mesos_jar_basename = streams_mesos_jar_prefix + version + streams_mesos_jar_suffix
+#print "jar = ", streams_mesos_jar_basename
+
+if (is_prod_switch):
+	streams_mesos_jar=streams_install+"/lib/"+streams_mesos_jar_basename
+	properties=streams_install+"/etc/mesos/streams-mesos.properties"
+else:
+	proj_path=(dirname(realpath(__file__))) + "/../"
+	streams_mesos_jar=proj_path + "lib/" + streams_mesos_jar_basename
+	properties=proj_path+"etc/streams-mesos.properties"
+
+user = getenv("USER")
+zk = getenv("STREAMS_ZKCONNECT")
+wasZkSet = False
+wasPropSet = False
+wasTypeSet = False
+wasFgSet = False
+
+# Future get master from properties file?
+master=None
+wasMasterSet=False
+
+domain=None
+deploy=False
+domain=domain_env
+wasDomainSet=False
+force=False
+wasAllSet=False
+wasLongSet=False
+
+for opt, arg in options:
+	if opt == "--zkconnect":
+		zk = arg
+		wasZkSet=True
+	elif opt == "--master":
+		master = arg
+		wasMasterSet=True
+	elif opt in ("--domain" , "-d" ,"--domain-id"):
+		domain = arg
+		wasDomainSet=True
+	elif opt == "--deploy":
+		deploy=True
+	elif opt == "--force":
+		force=True
+	elif opt == "--properties":
+		properties=arg
+		wasPropSet=True
+	elif opt == "--type":
+		type = arg
+		wasTypeSet = True
+	elif opt == "--all":
+		wasAllSet = True
+	elif opt == "-l":
+		wasLongSet = True
+	elif opt == "--fg":
+		wasFgSet = True
+	else:
+		sys.exit("Invalid option: " + opt)
+
+# zk must be specified
+test_var(zk, "ERROR: Zookeeper url not specified")
+
+
+# If all set, cannot set domain
+# if all not set, and no domain specified or in env then error
+if (wasAllSet and wasDomainSet):
+	sys.exit("--all and --domain are mutually exclusive, specify only one of them")
+	
+# domain must be specified (for now)
+if (not wasAllSet):
+	test_var(domain, "ERROR: Domain name not specified as an argument or env variable")
+
+# Warn if HADOOP_CLASSPATH not set
+# In the future this should only happen if --deploy set and using HDFS as deploy area for mesos fetch
+needsHadoop = False
+usesHadoop = False
+if(sys.argv[1] == "start"):
+	needsHadoop = True
+if (needsHadoop):
+	hadoop_cp = getenv("HADOOP_CLASSPATH")
+	if (hadoop_cp == None):
+		usesHadoop = False
+		print "WARNING: HADOOP_CLASSPATH not set, will get errors if you configure hdfs provisioning directory"
+
+
+# Must use IBM Java packaged with Streams
+java_command = streams_install + "/java/bin/java"
+
+streams_product_cp = ":".join([
+					streams_install + "/lib/com.ibm.streams.resourcemgr.jar",
+				  	streams_install + "/lib/com.ibm.streams.resourcemgr.utils.jar",
+				  	streams_install + "/system/impl/lib/com.ibm.streams.platform.jar"
+		       		])
+
+java_cp = (".:" + streams_mesos_jar + ":"
+	+ streams_install + "/lib/" + streams_product_cp)
+	
+if (usesHadoop):
+	java_cp = (java_cp + ":" + hadoop_cp)
+
+
+if(sys.argv[1] == "start"):
+	command=(java_command
+		 + " -cp " + java_cp
+		 + " com.ibm.streams.resourcemgr.ResourceServer "
+		 + " ".join(sys.argv[1:])
+		 + " --manager " + streams_mesos_manager_class + " "
+		# + " --home-dir " + user_home
+		 + " --install-path " + streams_install
+		 )
+	if not wasDomainSet:
+		command = command+ " --domain-id " + domain
+	if not wasZkSet:
+		command = command+ " --zkconnect " + zk
+	if not wasPropSet:
+		command = command+ " --properties " + properties
+	if wasMasterSet:
+		command = command+ " --master " + master
+	if not wasTypeSet:
+		command = command + " --type " + type
+	if not wasFgSet:
+		command = command + " &"
+	
+	rc = system(command)
+	if(rc == 0):
+		if not wasFgSet:
+			print "The Streams Mesos Resource Manager has been submitted as a background process.  Use the 'streams-on-mesos status' command to view process information."
+	else:
+		sys.exit(1)
+
+#
+# stop
+elif(sys.argv[1] == "stop"):
+	command=( java_command
+			+ " -cp " + streams_product_cp
+			+ " com.ibm.streams.resourcemgr.StopResourceServer "
+			+ " ".join(sys.argv[1:])
+		)
+	if not wasDomainSet:
+		command = command+ " -d " + domain
+	if not wasZkSet:
+		command = command+ " --zkconnect " + zk
+	if not wasTypeSet:
+		command = command + " --type " + type
+		
+	print "About to run:"
+	print command
+	
+	rc = system(command)
+	if(rc != 0):
+		if(not force):
+			sys.exit(1)
+		else:
+			print "Streams Mesos Scheduler shutdown failed. Proceeding to a forced stop."
+	elif (not force):
+		print "Streams Mesos Resource Manager stopped."
+		sys.exit(0)
+
+# status
+elif(sys.argv[1] == "status"):
+	command = (java_command 
+		+ " -cp " + java_cp 
+		+ " com.ibm.streams.resourcemgr.ResourceServer "
+		+ " ".join(sys.argv[1:])
+		+ " --status"
+		)
+	if not wasDomainSet:
+		command = command+ " -d " + domain
+	if not wasZkSet:
+		command = command + " --zkconnect " + zk 
+	if not wasTypeSet:
+		command = command + " --type " + type
+		
+	rc = system(command)
+	if(rc != 0):
+		sys.exit(1)
+elif(sys.argv[1] == "getresourcestate"):
+	command = (java_command
+		+ " -cp " + java_cp
+		+ " com.ibm.streams.resourcemgr.mesos.command.GetResourceState "
+		+ " ".join(sys.argv[2:])
+		)
+	if not wasAllSet:
+		command = command+ " --domain-id " + domain
+	if not wasZkSet:
+		command = command + " --zkconnect " + zk
+	if not wasTypeSet:
+		command = command + " --type " + type
+	rc = system(command)
+	if(rc != 0):
+		sys.exit(1)
+elif(sys.argv[1] == "version"):
+	#print "Version: ", version
+	command = (java_command
+		+ " -cp " + java_cp
+		+ " com.ibm.streams.resourcemgr.mesos.command.Version "
+		+ " ".join(sys.argv[2:])
+		)
+	rc = system(command)
+	if(rc != 0):
+		sys.exit(1)
+	

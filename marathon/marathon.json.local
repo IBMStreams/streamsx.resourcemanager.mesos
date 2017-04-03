@@ -1,0 +1,47 @@
+{
+	"id": "/streams-on-mesos",
+	"cpus": 1,
+	"mem": 128,
+	"cmd": "$(pwd)/streamsmesos/scripts/streams-on-mesos start --properties $(pwd)/streamsmesos.properties --fg",
+	"args": null,
+	"user": "brian",
+	"env": {
+		"STREAMS_INSTALL": "/opt/ibm/InfoSphere_Streams/4.2.0.0",
+		"STREAMS_ZKCONNECT": "172.31.29.41:2181",
+		"STREAMS_DOMAIN_ID": "StreamsDomain"
+	},
+	"fetch": [
+		{
+			"uri": "/home/brian/git2/streamsx.resourcemanager.mesos/target/streams-on-mesos-0.5.0-SNAPSHOT.tar.gz",
+			"extract": true,
+			"executable": false,
+			"cache": false
+		},
+		{
+			"uri": "/home/brian/git2/streamsx.resourcemanager.mesos/marathon/streamsmesos.properties",
+			"extract": false,
+			"executable": false,
+			"cache": false
+		},
+		{
+			"uri": "/home/brian/git2/streamsx.resourcemanager.mesos/marathon/log4j.properties",
+			"extract": false,
+			"executable": false,
+			"cache": false
+		}
+	],
+	"constraints": [
+		[
+			"hostname",
+			"LIKE",
+			"172.31.29.41"
+		]
+	],
+	"healthChecks": [
+		{
+			"protocol": "COMMAND",
+			"command": {"value": "$(pwd)/streamsmesos/scripts/streams-on-mesos status"},
+			"maxConsecutiveFailures": 3
+		}
+	] 
+}
