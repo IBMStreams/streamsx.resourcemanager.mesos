@@ -63,6 +63,10 @@
   * Prevent shutdown (unless --force) if we have resources being used
 * Starting Instance
 	* No resources with the application tag are available in the StreamsInstance instance for the following domain: StreamsDomain. Using mesos_resource_1 as an application resource.
+* Determine what to do with stopped resources
+	* For now we keep them with status that they are STOPPED
+	* Over time, this could build up, and really no need to persist them
+	* May be good time after smr.stop() is called and completed to delete from persistence
 	
 ## Failover logic
 	if !reconciling

@@ -40,6 +40,9 @@ import com.ibm.streams.resourcemgr.ResourceTags.TagDefinitionType;
 import com.ibm.streams.resourcemgr.mesos.StreamsMesosResource.RequestState;
 import com.ibm.streams.resourcemgr.mesos.StreamsMesosResource.ResourceState;
 
+// For client persistence
+import com.ibm.streams.resourcemgr.request.JsonUtilities;
+
 /**
  * Contains the state of the Resource manager
  * 
@@ -114,11 +117,15 @@ public class StreamsMesosState {
 			smr.getTags().addAll(tags.getNames());
 		}
 		
-		
-		// Add to collections to track
 		LOG.debug("Queuing new Resource Request: " + smr.toString());
 		
+		// create allResources map entry
 		_allResources.put(smr.getId(), smr);
+		
+		// persist resource
+		persistResource(smr);
+		
+		// put resource into requested array
 		requestResource(smr);
 		
 		return smr;
@@ -175,18 +182,23 @@ public class StreamsMesosState {
 	
 	// Re-request resource means put it back on the requestedResources list
 	// Usually called when a failure occurs before Streams notified
-	// Example is a problem with mesos slave that prevents controller from running
+	// Example is a problem with mesos slave that prevents streams controller from running
 	private void reLaunchResourceTask(StreamsMesosResource smr) {
 		LOG.debug("Re-launching resource task" + smr.getId());
 		smr.setResourceState(ResourceState.NEW);
 		smr.setTaskCompletionStatus(null);
 		smr.setTaskId(null);
+		persistResource(smr);
 		requestResource(smr);
 	}
 	
 	private void requestResource(StreamsMesosResource smr) {
 		synchronized(this) {
+			// add to requested resources array
 			_requestedResources.add(smr);
+			
+			persistResourceRequest(smr.getId());
+			
 			if (_scheduler != null) {
 				if (!_scheduler.isReceivingOffers()) {
 					LOG.debug("Reviving offers from mesos");
@@ -206,17 +218,24 @@ public class StreamsMesosState {
 	}
 	
 	// Remove a resource from the list of requested resources if it is there
+	// This does not delete the resource, just means the request is no longer outstanding
 	public void removeRequestedResource(StreamsMesosResource smr) {
 		_requestedResources.remove(smr);
+		
+		deleteResourceRequest(smr.getId());
 	}
 	
 	// Remove a collection of requested resources
 	public void removeRequestedResources(Collection<StreamsMesosResource> resources) {
 		_requestedResources.removeAll(resources);
+		
+		for (StreamsMesosResource smr: resources) {
+			deleteResourceRequest(smr.getId());
+		}
 	}
 	
 	// Return resourceId
-	// placeholder for when we implement persistence storage in paths
+	// Just a place where we can control how we index our resources in persistence, now it is by nativeResourceId same as resourceId
 	public String getResourceId(String nativeResourceId) {
 		return nativeResourceId;
 	}
@@ -226,16 +245,33 @@ public class StreamsMesosState {
 		return getResourceId(descriptor.getNativeResourceId());
 	}
 	
+	// Get Resource, if not in map try persistence
 	public StreamsMesosResource getResource(String resourceId) {
+		StreamsMesosResource smr = null;
+		
 		if (_allResources.containsKey(resourceId)) {
-			return _allResources.get(resourceId);
+			smr =  _allResources.get(resourceId);
 		} else {
-			LOG.warn("getResource from state failed: Resource Not found (id: " + resourceId  + ")");
-			return null;
+			// Not in the map, try persistence
+			smr = retrieveResource(resourceId);
+			
+			if (smr != null) {
+				LOG.debug("getResource(" + resourceId + ") not found in _allResources map, but did find in persistence, adding to map");
+				_allResources.put(resourceId, smr);
+			}
 		}
+		
+		if (smr == null) {
+			LOG.warn("getResource from state failed: Resource Not found (id: " + resourceId  + ")");
+		}
+	
+		return smr;
 	}
 	
-	public StreamsMesosResource getResourceByTaskId(String taskId) {
+	// Get resource for a given taskId.
+	// Future: May need to retrieve from persistence for failover, recovery, and reconciliation
+	// Future: May need an index in persistence tasks/<taskId>: {resourceId: <resourceId>}
+	private StreamsMesosResource getResourceByTaskId(String taskId) {
 		for (StreamsMesosResource smr : _allResources.values()) {
 			if (smr.getTaskId() != null) {
 				if (smr.getTaskId().equals(taskId)) {
@@ -248,39 +284,49 @@ public class StreamsMesosState {
 		return null;
 	}
 	
-	
+	// Task launched.  Reported by Scheduler when it has launched the task
+	// Future: May need to insert into index in persistence tasks/<taskId>: {resourceId: <resourceId>}
 	public void taskLaunched(String resourceId) {
 		StreamsMesosResource smr = getResource(resourceId);
 		if (smr != null) {
 			smr.setResourceState(StreamsMesosResource.ResourceState.LAUNCHED);
 			smr.setTaskCompletionStatus(StreamsMesosResource.TaskCompletionStatus.NONE);
+			persistResource(smr);
 		} else {
 			LOG.warn("taskLaunched from state failed to find resource (id: " + resourceId + ")");
 		}
 
 	}
 	
+	// Set Allocated.  Reported by Resource Manager when pending requests are satisfied
 	public void setAllocated(String resourceId) {
 		StreamsMesosResource smr = getResource(resourceId);
 		if (smr != null) {
 			smr.setRequestState(StreamsMesosResource.RequestState.ALLOCATED);
+			persistResource(smr);
 		} else {
 			LOG.warn("setAllocated from state failed to find resource (id: " + resourceId + ")");
 		}		
 	}
 	
+	// Set Pending.  Reported by Resource Manager when request can not be immediately satisfied
 	public void setPending(String resourceId) {
 		StreamsMesosResource smr = getResource(resourceId);
 		if (smr != null) {
 			smr.setRequestState(StreamsMesosResource.RequestState.PENDING);
+			persistResource(smr);
 		} else {
 			LOG.warn("setPending from state failed to find resource (id: " + resourceId + ")");
 		}
 	}
 	
 	
+	///////////////////////////////////////
+	/// TASK STATUS FROM MESOS HANDLING
+	///////////////////////////////////////
 	
-	
+	// Map mesos task status to our resource state
+	// Future: May need ability to create new resources when we reconcile after a failure
 	private void mapAndUpdateMesosTaskStateToResourceState(StreamsMesosResource smr, Protos.TaskState taskState) {
 		// Handle the mapping and interpretation of mesos status update
 	
@@ -331,6 +377,7 @@ public class StreamsMesosState {
 					", Task Completion Status = " + newTaskCompletionStatus.toString());
 			smr.setResourceState(newResourceState);
 			smr.setTaskCompletionStatus(newTaskCompletionStatus);
+			persistResource(smr);
 		} else
 			LOG.debug("Mesos Task Status Update was not mapped to a Resource State, no action");	
 	}
@@ -379,10 +426,12 @@ public class StreamsMesosState {
 					LOG.debug("Resource " + smr.getId() + " is now RUNNING and RequestState was PENDING, changing RequestState to ALLOCATED and notifying Streams");
 					// Need to notify client
 					smr.setRequestState(RequestState.ALLOCATED);
+					persistResource(smr);
 					smr.notifyClientAllocated();
 				} else if (newResourceState == ResourceState.RUNNING && oldResourceState == ResourceState.STOPPING) {
 					LOG.debug("Resource " + smr.getId() + " is now RUNNING, but it was STOPPING.  Issuing stop again.");
 					smr.stop();
+					persistResource(smr);
 					
 				// STOPPED and FAILED - may need to better test to determine normal expected from unexpected
 					
@@ -391,11 +440,12 @@ public class StreamsMesosState {
 					LOG.info("Resource " + smr.getId() + " task id " + taskId + " has stopped");
 					LOG.debug("  changing RequestState to RELEASED.");
 					smr.setRequestState(RequestState.RELEASED);
+					persistResource(smr);
 	
 				// FAILED - abnormal
 				// This may be where we need to notify streams something bad happened
 				} else if (newResourceState == ResourceState.FAILED) {
-					// If the Failure occured before we notified Streams, then we can just let it die and put back on newRequestList
+					// If the Failure occurred before we notified Streams, then we can just let it die and put back on newRequestList
 					// This is a case when a slave has issues
 					LOG.warn("Resource " + smr.getId() + " with Mesos task Id " + taskId + " Failed on Mesos slave: " + taskSlaveIP);
 					LOG.warn("  Message: " + taskStatus.getMessage());
@@ -406,10 +456,12 @@ public class StreamsMesosState {
 					} else if (requestState == RequestState.ALLOCATED) {
 						LOG.warn("Resource " + smr.getId() + " Failed with request state ALLOCATED, notify Streams of revoke");
 						smr.setRequestState(RequestState.RELEASED);
+						persistResource(smr);
 						smr.notifyClientRevoked();
 					} else if (requestState == RequestState.PENDING) {
 						LOG.warn("Resource " + smr.getId() + " Failed with request state PENDING, notify Streams of revoke");
 						smr.setRequestState(RequestState.RELEASED);
+						persistResource(smr);
 						smr.notifyClientRevoked();		
 					} else if (requestState == RequestState.CANCELLED || requestState == RequestState.RELEASED) {
 						LOG.warn("Resource " + smr.getId() + " Failed with requestState " + requestState + ", no action required, but not sure why task was still running to have a status update");
@@ -435,18 +487,21 @@ public class StreamsMesosState {
 			// So what state is it in?  What if we just allocated it?
 			// Update its request state
 			smr.setRequestState(RequestState.CANCELLED);
+			persistResource(smr);
 			// Need to cancel if running or launched
 			if (smr.isRunning() || smr.isLaunched()) {
 				// Its running so no need to remove from list of requsted resources, but need to stop it
 				LOG.debug("Pending Resource (" + getResourceId(descriptor) + ") cancelled by streams, but it is already launced or "
 						+ "running, stopping...");
 				smr.stop();
+				persistResource(smr);
 			} else {
 				// Remove from the requested resource list if it is on it
 				removeRequestedResource(smr);
 				// If it was new, set it to CANCELLED so we no it was never started
 				if (smr.getResourceState() == ResourceState.NEW) {
 					smr.setResourceState(ResourceState.CANCELLED);
+					persistResource(smr);
 				}
 			}
 		} else {
@@ -460,6 +515,7 @@ public class StreamsMesosState {
 		StreamsMesosResource smr = getResource(getResourceId(descriptor));
 		if (smr != null) {
 			smr.stop();
+			persistResource(smr);
 		} else {
 			LOG.info("releaseResource: Resource no longer exists (id: " + getResourceId(descriptor) +
 					"), nothing to do.");
@@ -471,10 +527,11 @@ public class StreamsMesosState {
 	// !!! NOTE: need to handle multiple clients in the future
 	public void releaseAllResources(ClientInfo client) throws ResourceManagerException {
 		// Verify we are working with this client
-		ClientInfo clientInfo = getClientInfo(client.getClientId());
-		if (clientInfo != null) {
+		Properties clientProps = getClientInfo(client.getClientId());
+		if (clientProps != null) {
 			for (StreamsMesosResource smr : getAllResources().values()) {
 				smr.stop();
+				persistResource(smr);
 			}
 		} else {
 			LOG.info("releaseAllResources: Unknown client (" + client.getClientId() + 
@@ -484,18 +541,52 @@ public class StreamsMesosState {
 	
 	
 	
+	////////////////////////////////////////////////////////
+	/// Client Information Serialization and Persistence
+	////////////////////////////////////////////////////////
+	
+	// NOTE: ClientInfo is an interface exposed by IBM Resource Manager API
+	//       ClientINformation is their concrete class, however it is not exposed
+	//       We will store properties of ClientInfo in persistence and use it
+	//       for any comparisons required to identify new connections
+	
+    public Properties getClientInfoProperties(ClientInfo ci) {
+        Properties props = new Properties();
+        props.setProperty("clientId", ci.getClientId());
+        props.setProperty("clientName", ci.getClientName());
+        props.setProperty("domainId", ci.getDomainId());
+        props.setProperty("installPath", ci.getInstallPath());
+        props.setProperty("installVersion", ci.getInstallVersion());
+        props.setProperty("osMajorVersion", Integer.toString(ci.getOSMajorVersion()));
+        props.setProperty("osMinorVersion", Integer.toString(ci.getOSMinorVersion()));     
+        props.setProperty("zkConnect", ci.getZkConnect());
+        props.setProperty("isController", ci.isController() ? "true" : "false");
+        props.setProperty("isStreamtool", ci.isStreamtool() ? "true" : "false");
+        props.setProperty("os", ci.getOS().name());
+        props.setProperty("architecture", ci.getArchitecture().name());
+
+        return props;
+    } 
+	
+	
     /**
      * Returns list of all known client identifiers
      * 
      * @return Collection<String>
      */
     public Collection<String> getClientIds() {
-        //return getChildren(getClientsPath());
-    	List<String> clientIds = new ArrayList<String>();
-    	clientIds.add(_clientInfo.getClientId());
+        return getChildren(getClientsPath());
+        // Pre-persistence 
+    	//List<String> clientIds = new ArrayList<String>();
+    	//clientIds.add(_clientInfo.getClientId());
     	
-    	return clientIds;
+    	//return clientIds;
     }
+    
+    /**
+     * Returns client information properties
+     * Because we cannot store/create a true ClientInfo object
+     */
 
     /**
      * Returns client information
@@ -503,19 +594,28 @@ public class StreamsMesosState {
      * @param clientId - String
      * @return ClientInfo
      */
-    public ClientInfo getClientInfo(String clientId) {
-        ClientInfo client = null;
+    public Properties getClientInfo(String clientId) {
+        Properties clientProps = null;
         
-        // Just ensure we are on the same page with the clientId requested
-        if (_clientInfo != null) {
-        	if (_clientInfo.getClientId().equals(clientId)) {
-        		client = _clientInfo;
-        	} else {
-        		LOG.warn("getClientInfo from state failed because clientId(" + clientId + ") does not match the client id we are working with (" + _clientInfo.getClientId() + ").  Must be restarting a domain.");
-        	}
+        try {
+        	// Symphony implementation code
+        	// clients/<clientId>
+        	//String clientJson = getPathProperty(getClientPath(clientId), "client");
+        	//if (clientJson != null) {
+        	//	JSONObject json = JSONObject.parse(clientJson);
+        	//	client = new ClientInformation(json);
+        	
+        	clientProps = getPath(getClientPath(clientId));
+        	
+        } catch (Throwable t) {
+        	LOG.error("Persistence getClientInfo Error: " + t.getMessage());
+        }
+ 
+        if (clientProps == null) {
+        	LOG.debug("getClientInfo: Client not found (" + clientId + ").  Possibly restarting a domain.");
         }
 
-        return client;
+        return clientProps;
     }
     
 
@@ -559,6 +659,81 @@ public class StreamsMesosState {
     	
     }
     
+    /**
+     * Save StreamsMesosResource to persistent storage
+     * @param smr - StreamsMesosResource object to save/update
+     */
+    private void persistResource(StreamsMesosResource smr) {
+    	String resourceId = smr.getId();
+    	try {
+	    	LOG.debug("Persisting Resource: resourceId = " + smr.getId());
+	    	
+	    	// persist: resources/<resourceId>
+	    	String resourcePath = getResourcePath(resourceId);
+	    	if (!_persistence.exists(resourcePath)) {
+	    		LOG.trace("  Resource did not exist in persistence yet");
+	    	}
+	    	setPath(resourcePath,smr.getProperties());
+    	} catch (Throwable t) {
+    		LOG.error("Failed to persist smr with resourceID(" + resourceId + "): " + t.getMessage());
+    	}
+    }
+    
+    private StreamsMesosResource retrieveResource(String resourceId) {
+    	StreamsMesosResource smr = null;
+    	
+    	Properties props = getPath(getResourcePath(resourceId));
+    	
+    	if (props != null) {
+    		smr = new StreamsMesosResource(_manager, props);
+    	}
+    	
+    	return smr;
+    }
+    
+    private void persistResourceRequest(String resourceId) {
+		try {
+			// persist: requestedResources/<resourceId>
+			setPath(getRequestedResourcePath(resourceId),null);
+		} catch (Throwable t) {
+    		LOG.error("Failed to persist requestedResource Index entry(" + resourceId + "): " + t.getMessage());				
+		}    	
+    }
+    
+    private void deleteResourceRequest(String resourceId) {
+    	if (resourceId != null) {
+    		deletePath(getRequestedResourcePath(resourceId));
+    	}
+    }
+    
+    //////////////////////////////////////////
+    /// PERSISTENCE MODEL HELPERS
+    //////////////////////////////////////////
+    
+    private String getResourcesPath() {
+    	return "resources";
+    }
+    
+    private String getResourcePath(String resourceId) {
+    	return getResourcesPath() + "/" + resourceId;
+    }
+    
+    private String getRequestedResourcesPath() {
+    	return "requestedResources";
+    }
+    
+    private String getRequestedResourcePath(String resourceId) {
+    	return getRequestedResourcesPath() + "/" + resourceId;
+    }
+    
+    private String getClientsPath() {
+    	return "clients";
+    }
+    
+    private String getClientPath(String clientId) {
+    	return getClientsPath() + "/" + clientId;
+    }
+    
     //////////////////////////////////////////
     /// PERSISTENCE INTERFACES
     //////////////////////////////////////////
@@ -582,6 +757,18 @@ public class StreamsMesosState {
     }
     
     /**
+     * Returns requested property from path; null if property does not exist
+     */
+    private String getPathProperty(String path, String propName) {
+    	String propValue = null;
+    	Properties props = getPath(path);
+    	if (props != null) {
+    		propValue = props.getProperty(propName);
+    	}
+    	return propValue;
+    }
+    
+    /**
      * Sets persistence path properties (saves into zookeeper)
      */
     private void setPath(String path, Properties props) {
@@ -591,5 +778,30 @@ public class StreamsMesosState {
     		LOG.error("Persistence setPath Error: " + t.getMessage());
     	}
     }
-	
+    
+    /**
+     * Delete persistence path properties
+     */
+    private void deletePath(String path) {
+    	try {
+    		_persistence.delete(path);
+    	} catch (Throwable t) {
+    		LOG.error("Persistence deletePath Error: " + t.getMessage());
+    	}
+    }
+    
+    /**
+     * Get children list for a path
+     */
+	private Collection<String> getChildren(String path) {
+		try {
+			if (_persistence.exists(path)) {
+				return _persistence.getChildren(path);
+			}
+		} catch (Throwable t) {
+			LOG.error("Persistence getChildren(" + path + ") error: " + t.getMessage());
+		}
+		
+		return new ArrayList<String>(0);
+	}
 }

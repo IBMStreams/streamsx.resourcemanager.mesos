@@ -405,14 +405,14 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 	public void clientConnected(ClientInfo clientInfo) {
 		LOG.debug("Client connected: " + clientInfo);
 		if (clientInfo.getClientName().equals("controller")) {
-			ClientInfo saved = _state.getClientInfo(clientInfo.getClientId());
-			if (saved != null) {
+			Properties savedClientProps = _state.getClientInfo(clientInfo.getClientId());
+			if (savedClientProps != null) {
 				String version = clientInfo.getInstallVersion();
-				String savedVersion = saved.getInstallVersion();
+				String savedVersion = savedClientProps.getProperty("installVersion");
 
 				// install version has changed
 				if (version != null && savedVersion != null && !version.equals(savedVersion)) {
-					LOG.debug("##### client=" + saved.getClientId() + " changed install version from=" + savedVersion
+					LOG.debug("##### client=" + clientInfo.getClientId() + " changed install version from=" + savedVersion
 							+ " to=" + version);
 				}
 			}
