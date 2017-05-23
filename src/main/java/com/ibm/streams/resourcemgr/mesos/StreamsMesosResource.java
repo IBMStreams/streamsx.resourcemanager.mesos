@@ -143,8 +143,8 @@ class StreamsMesosResource {
         _cpuAllocated = Double.parseDouble(props.getProperty("cpuAllocated"));
         _isMaster = props.getProperty("isMaster").equals("true");
         _resourceType = props.getProperty("resourceType");
-        _taskId = props.getProperty("taskId");
-        _hostName = props.getProperty("hostName");
+        _taskId = props.getProperty("taskId",null);
+        _hostName = props.getProperty("hostName",null);
     }	
     
     
@@ -172,8 +172,8 @@ class StreamsMesosResource {
         props.setProperty("cpuAllocated", Double.toString(_cpuAllocated));
         props.setProperty("isMaster", _isMaster ? "true" : "false");
         props.setProperty("resourceType", _resourceType);
-        props.setProperty("taskId", _taskId);
-        props.setProperty("hostName", _hostName);
+        if (_taskId != null) props.setProperty("taskId",_taskId);
+        if (_hostName != null) props.setProperty("hostName",_hostName);
 
         return props;
     }

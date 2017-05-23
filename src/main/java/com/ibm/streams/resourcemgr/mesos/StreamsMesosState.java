@@ -99,6 +99,7 @@ public class StreamsMesosState {
 
 	// Create a new SMR and put it proper containers
 	synchronized public StreamsMesosResource createNewResource(ClientInfo client, ResourceTags tags, boolean isMaster) throws ResourceManagerException {
+        LOG.trace("createNewResource clientId: " + client.getClientId() + ", isMaster: " + isMaster + ", tags: " + tags);
 		// Create the Resource object (default state is NEW)
 		StreamsMesosResource smr = new StreamsMesosResource(Utils.generateNextId("resource"), client, _manager);
 
@@ -117,7 +118,7 @@ public class StreamsMesosState {
 			smr.getTags().addAll(tags.getNames());
 		}
 		
-		LOG.debug("Queuing new Resource Request: " + smr.toString());
+		LOG.debug("QUEUING new Resource Request: " + smr.toString());
 		
 		// create allResources map entry
 		_allResources.put(smr.getId(), smr);
@@ -127,6 +128,9 @@ public class StreamsMesosState {
 		
 		// put resource into requested array
 		requestResource(smr);
+		
+		// Save client information that requested the resource
+		addClientInfo(client, smr.getId());
 		
 		return smr;
 	}
@@ -598,15 +602,7 @@ public class StreamsMesosState {
         Properties clientProps = null;
         
         try {
-        	// Symphony implementation code
-        	// clients/<clientId>
-        	//String clientJson = getPathProperty(getClientPath(clientId), "client");
-        	//if (clientJson != null) {
-        	//	JSONObject json = JSONObject.parse(clientJson);
-        	//	client = new ClientInformation(json);
-        	
         	clientProps = getPath(getClientPath(clientId));
-        	
         } catch (Throwable t) {
         	LOG.error("Persistence getClientInfo Error: " + t.getMessage());
         }
@@ -620,24 +616,64 @@ public class StreamsMesosState {
     
 
     /**
-     * Set client information to persistence
+     * Set client information in persistence
      * 
      * @param client - ClientInfo
      */
     public void setClientInfo(ClientInfo client) {
-    	if (client != null) {
-	        if (_clientInfo == null) {
-	        	_clientInfo = client;
-	        } else if (!(_clientInfo.getClientId().equals(client.getClientId()))) {
-	        	LOG.warn("setClientInfo on state failed because clientId(" + client.getClientId() + ") does not match the client id already set (" + _clientInfo.getClientId() + ").  Must be restarting a domain");
-	        } else {
-	        	// Setting to the same value so no need to do anything
-	        }
-    	} else {
+    	if (client == null) {
     		LOG.warn("setClientInfo on state failed because it was passed null client object");
+    		return;
     	}
+    	
+    	// TEMPORARY TO ONLY HANDLE ONE CLIENT
+	    if (_clientInfo != null) {
+	    	if (!(_clientInfo.getClientId().equals(client.getClientId()))) {	    	
+	        	LOG.warn("setClientInfo on state failed because clientId(" + client.getClientId() + ") does not match the client id already set (" + _clientInfo.getClientId() + ").  Must be restarting a domain");
+	        	return;
+	    	}
+	    }
 	    
+	    // Same one or new
+	    _clientInfo = client;
+	    
+	    // CORRECT CODE FOR HANDLINE MULTIPLE
+	    try {
+	    	String clientId = client.getClientId();
+	    	
+	    	// <resmgr>/clients/<clientId>
+	    	String clientPath = getClientPath(clientId);
+	    	if (_persistence.exists(clientPath)) {
+	    		// Update it
+	    		setPath(clientPath,getClientInfoProperties(client));
+	    	}
+	    } catch (Throwable t) {
+        	LOG.error("Persistence setClientInfo Error: " + t.getMessage());
+	    }
+
     }
+    /**
+     * Creates client info and creates index for resources it has requested
+     * @param client
+     * @param resourceId
+     */
+    public void addClientInfo(ClientInfo client, String resourceId) {
+    	// Update Client info if necessary
+    	setClientInfo(client);
+    	    	
+    	try {
+    		String clientId = client.getClientId();
+    		
+    		// <resmgr>/clients/<clientId>/<resourceId>
+    		Properties props = new Properties();
+    		props.setProperty("client", clientId);
+    		setPath(getClientResourcePath(clientId,resourceId),props);
+    	} catch (Throwable t) {
+        	LOG.error("Persistence addClientInfo Error: " + t.getMessage());
+	    }
+    }
+    
+    
     
     //////////////////////////////////////////
     // PERSISTENCE OF STATE
@@ -671,11 +707,13 @@ public class StreamsMesosState {
 	    	// persist: resources/<resourceId>
 	    	String resourcePath = getResourcePath(resourceId);
 	    	if (!_persistence.exists(resourcePath)) {
-	    		LOG.trace("  Resource did not exist in persistence yet");
+	    		LOG.trace("  Resource did not exist in persistence (" + resourcePath + ") yet");
 	    	}
+	    	LOG.trace("  setPath: path=" + resourcePath + ", Resource properties=" + smr.getProperties());
 	    	setPath(resourcePath,smr.getProperties());
     	} catch (Throwable t) {
-    		LOG.error("Failed to persist smr with resourceID(" + resourceId + "): " + t.getMessage());
+    		LOG.error("Failed to persist smr with resourceID(" + resourceId + "): " + t.getMessage() + "\n" + t);
+    		t.printStackTrace();
     	}
     }
     
@@ -732,6 +770,10 @@ public class StreamsMesosState {
     
     private String getClientPath(String clientId) {
     	return getClientsPath() + "/" + clientId;
+    }
+    
+    private String getClientResourcePath(String clientId, String resourceId) {
+    	return getClientPath(clientId) + "/" + resourceId;
     }
     
     //////////////////////////////////////////
