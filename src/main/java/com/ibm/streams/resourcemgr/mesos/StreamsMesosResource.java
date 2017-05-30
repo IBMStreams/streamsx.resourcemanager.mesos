@@ -437,7 +437,9 @@ class StreamsMesosResource {
 	// Create the Mesos task ID based on the resource ID
 	// Example: resource_5 => streams_resource_5_0
 	private Protos.TaskID generateTaskId(String resourceId) {
-		String taskid = Utils.generateNextId(StreamsMesosConstants.MESOS_TASK_ID_PREFIX + resourceId);
+		LOG.trace("Generating task id for resource: " + resourceId);
+		String taskid = _manager.getState().generateNextResourceTaskId(resourceId);
+		LOG.trace("   Generated task id: " + taskid);
 		setTaskId(taskid);
 
 		return Protos.TaskID.newBuilder().setValue(taskid).build(); 

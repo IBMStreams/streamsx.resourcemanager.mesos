@@ -18,11 +18,13 @@ package com.ibm.streams.resourcemgr.mesos;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.mesos.Protos;
 import org.apache.mesos.Protos.TaskStatus;
@@ -90,6 +92,8 @@ public class StreamsMesosState {
 		_persistence.connect();
 		_clientInfo = null;
 
+		// May be failover so retrieve any State that exists
+		retrieveResourceState();
 	}
 
 	
@@ -101,7 +105,7 @@ public class StreamsMesosState {
 	synchronized public StreamsMesosResource createNewResource(ClientInfo client, ResourceTags tags, boolean isMaster) throws ResourceManagerException {
         LOG.trace("createNewResource clientId: " + client.getClientId() + ", isMaster: " + isMaster + ", tags: " + tags);
 		// Create the Resource object (default state is NEW)
-		StreamsMesosResource smr = new StreamsMesosResource(Utils.generateNextId("resource"), client, _manager);
+		StreamsMesosResource smr = new StreamsMesosResource(generateNextResourceId(), client, _manager);
 
 		smr.setMaster(isMaster);
 		
@@ -676,7 +680,7 @@ public class StreamsMesosState {
     
     
     //////////////////////////////////////////
-    // PERSISTENCE OF STATE
+    // FRAMEWORKID PERSISTENCE
     //////////////////////////////////////////
     
     public String getMesosFrameworkId() {
@@ -693,6 +697,85 @@ public class StreamsMesosState {
     	props.setProperty("mesosFrameworkId", mesosFrameworkId);
     	setPath("mesosFrameworkId",props);
     	
+    }
+    
+    
+    ///////////////////////////////////////
+    ///   I D   P E R S I S T E N C E   
+    ///////////////////////////////////////
+    
+	public String generateNextResourceId () {
+		String prefix = StreamsMesosConstants.RESOURCE_ID_PREFIX;
+		return prefix + getNextId(prefix);
+	}
+	
+	public String generateNextResourceTaskId(String resourceId) {
+		String prefix = StreamsMesosConstants.MESOS_TASK_ID_PREFIX;
+		return prefix + resourceId + "_" + getNextId(resourceId);
+	}
+	
+	
+	private synchronized String getNextId(String propName) {
+		String nextIdString = null;
+		
+		// get nextId properties
+		Properties props = getPath("nextId");
+		if (props != null) {
+			nextIdString = props.getProperty(propName);
+		}
+		// nextId does NOT exist
+		else {
+			props = new Properties();
+		}
+		
+		// propName does NOT exist
+		if (nextIdString == null) {
+			nextIdString = "0";
+		}
+		
+		// increment and save
+		String nextId = Integer.toString((Integer.parseInt(nextIdString) + 1));
+		props.setProperty(propName,  nextId);
+		setPath("nextId", props);
+		
+		return nextIdString;
+	}
+    
+    
+    /////////////////////////////////////////////
+    /// R E S O U R C E   P E R S I S T E N C E   
+    /////////////////////////////////////////////
+    
+    /**
+     * Retrieve all resources from persistence, usually used on failover
+     */
+    private void retrieveResourceState() {
+    	LOG.trace("!!! retrieveResourceState, clearing resource map and list");
+    	// Clear existing resource state
+    	_allResources.clear();
+    	_requestedResources.clear();
+    	
+    	// <resmgr>/resources
+    	String resourcesPath = getResourcesPath();
+    	
+    	for (String resourceId : getChildren(resourcesPath)) {
+    		StreamsMesosResource smr = retrieveResource(resourceId);
+    		if (smr != null) {
+    			LOG.trace("     retrieved resourceId: " + resourceId);
+    			_allResources.put(resourceId, smr);
+    		}
+    	}
+    	
+    	// <resmgr>/requestedResources
+    	String requestedResourcesPath = getRequestedResourcesPath();
+    	
+    	for (String resourceId : getChildren(requestedResourcesPath)) {
+    		StreamsMesosResource smr = _allResources.get(resourceId);
+    		if (smr != null) {
+    			LOG.trace("     retrieved requested resourceId: " + resourceId);
+    			_requestedResources.add(smr);
+    		}
+    	}
     }
     
     /**

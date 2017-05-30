@@ -39,6 +39,7 @@ public class StreamsMesosConstants {
 	public static final String
 		RESOURCE_TYPE_DEFAULT = "mesos",
 		MESOS_TASK_ID_PREFIX = "streams_",
+		RESOURCE_ID_PREFIX = "resource_",
 		FRAMEWORK_NAME_DEFAULT = "IBMStreamsRM",
 		MESOS_ROLE_DEFAULT = "*",
 		MESOS_USER_DEFAULT = ""

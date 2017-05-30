@@ -23,6 +23,8 @@
 	* Leader Election and Framework ID reuse - DONE
 	* Restore/Validate State
 	* Reconcile with Mesos
+* Persistent State manager - see Symphony Resource Manager
+	* ValidateState
 * Handle Mesos Master Failover
     * Handle call to reregistered() on the scheduler	
 * Multiple copies of resource manager running and stop command issued
@@ -42,8 +44,7 @@
 * Handle multiple multiple clients (e.g. multiple domains)
 * Instructions and test for PKI authentication
 * Web interface to get internal state
-* Persistent State manager - see Symphony Resource Manager
-	* ValidateState
+
 * High Availability
 	* Mesos - Handle Master failover, Reconcile Tasks, Handle Scheduler failover
 	* Streams - Do the same
@@ -67,6 +68,16 @@
 	* For now we keep them with status that they are STOPPED
 	* Over time, this could build up, and really no need to persist them
 	* May be good time after smr.stop() is called and completed to delete from persistence
+	
+	
+## Zookeeper Hierarchy
+	../resources
+	../resources/<resourceId>
+	../requestedResources
+	../requestedResources/<resourceId>
+	../clients
+	../clients/<clientId>
+	../clients/<clientId>/<resourceId>  -- Index entry that resource was for given client
 	
 ## Failover logic
 	if !reconciling

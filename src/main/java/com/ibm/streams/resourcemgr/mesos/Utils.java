@@ -155,14 +155,9 @@ public class Utils {
 	public static boolean getBooleanProperty(Properties p, String name) {
 		return Boolean.parseBoolean(getProperty(p, name).trim());
 	}
-	static Map<String, AtomicLong> idMap = new HashMap<String, AtomicLong>();
-	public static String generateNextId (String name) {
-		synchronized(idMap) {
-			if(!idMap.containsKey(name))
-				idMap.put(name, new AtomicLong(0));
-		}
-		return name + "_" + idMap.get(name).getAndIncrement();
-	}
+	
+	
+
 
 	public static boolean createDirectory(String name) {
 		File folder = new File(name);

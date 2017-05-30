@@ -80,6 +80,7 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 	private List<Protos.CommandInfo.URI> _uriList = new ArrayList<Protos.CommandInfo.URI>();
 	private boolean _deployStreams = false;
 	private long _waitAllocatedSecs = StreamsMesosConstants.WAIT_ALLOCATED_SECS_DEFAULT;
+	private boolean _isFailover = false; // Set to true if initializing because of a failover
 
 
 
@@ -315,18 +316,26 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 		_state = new StreamsMesosState(this);
 
 		try {
+			
+			// Get framework ID from state to determine if this is a failover.
+			String savedFrameworkId = _state.getMesosFrameworkId();
+			if (savedFrameworkId != null) {
+				_isFailover = true;
+			}
+			
+			// Should only Need to setup provisioning if this is the initial LEADER (In Failover Situation when Multiple Running)
 			// Provision Streams if necessary
 			// Caution, this can take some time and cause timeouts on slow machines
 			// or workstations that are overloaded
 			// In testing, saw issues where Streams Resource Manager Server would
 			// disconnect client.
 			//if (_argsMap.containsKey(StreamsMesosConstants.DEPLOY_ARG)) {
-			if (_deployStreams) {
-				LOG.debug("Deploy flag set.  Calling provisionStreams...");
+			if (!_isFailover && _deployStreams) {
+				LOG.debug("Deploy flag set, and it is not a failover situation. Calling provisionStreams...");
 				provisionStreams(_uriList, Utils.getProperty(_config, StreamsMesosConstants.PROPS_MESOS_FETCH_PARENT_URI));
 			}
 	
-			// Get the streams master 
+			// Get the Mesos master 
 			// Priority: Argument, Property, Default
 			_master = Utils.getProperty(_config, StreamsMesosConstants.PROPS_MESOS_MASTER);
 			LOG.debug("Mesos master set to: " + _master);
@@ -335,6 +344,10 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 			LOG.trace("About to call runMesosScheduler...");
 	
 			runMesosScheduler(_master, _state);
+			
+			
+			// Validate the State.  Required for failover situations, but never hurts to run it.
+			validateState();
 	
 			LOG.debug("StreamsMesosResourceFramework.initialize() complete");
 		} catch (StreamsMesosException e) {
@@ -358,9 +371,8 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 		// handle the features we do know about
 		switch (feature) {
 		case HIGH_AVAILABILITY:
-			// Set to false for version 0.5
-			// It is not complete (need state saved in zookeeper)
-			supported = false;
+			// As of version 1.0
+			supported = true;
 		}
 		LOG.trace("isFeatureSupported returning: " + supported);
 		return supported;
@@ -969,6 +981,23 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 		uriList.add(uriBuilder.build());
 		LOG.debug("Created URI");
 	}
+	
+	
+	
+	///////////////////////////////////////////
+	///   F A I L O V E R   S U P P O R T   ///
+	///////////////////////////////////////////
+	
+	// Validate that the State, Streams, and Mesos are in sync
+	private void validateState() {
+		LOG.trace("!!! validateState");
+		
+	}
+	
+	
+	
+	
+	
 	
 	//////////////////////////////////////
 	/// CUSTOM COMMANDS IMPLEMENTATION ///
