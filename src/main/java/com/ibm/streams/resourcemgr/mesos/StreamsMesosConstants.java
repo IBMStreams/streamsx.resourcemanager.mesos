@@ -98,6 +98,10 @@ public class StreamsMesosConstants {
 		PROPS_STREAMS_INSTALL_PATH="STREAMS_INSTALL_PATH"
 	;
 	
+	public static final long
+		MESOS_TASK_RECONCILE_MAXWAIT=30
+	;
+	
 	public static final double
 		WAIT_SYNC_DEFAULT=30,
 		WAIT_ASYNC_DEFAULT=5,

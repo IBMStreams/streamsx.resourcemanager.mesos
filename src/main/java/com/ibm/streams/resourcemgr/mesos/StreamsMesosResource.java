@@ -21,7 +21,6 @@ package com.ibm.streams.resourcemgr.mesos;
  */
 
 //import java.net.UnknownHostException;
-import java.util.List;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -306,6 +305,12 @@ class StreamsMesosResource {
 	public boolean isAllocated() {
 		return _requestState == RequestState.ALLOCATED;
 	}
+	
+	// Return true if the state is terminal, no longer need to keep
+	public boolean isTerminal() {
+		return (_resourceState == ResourceState.STOPPED || _resourceState == ResourceState.FAILED || _resourceState == ResourceState.CANCELLED ||
+				_requestState == RequestState.CANCELLED || _requestState == RequestState.RELEASED);
+	}
 
 	
 	
@@ -320,7 +325,10 @@ class StreamsMesosResource {
 		return new ResourceDescriptorState(s, getDescriptor());
 	}
 	
-	
+
+	public String getClientId() {
+		return _clientId;
+	}
 
 	/* Mesos Helper Methods */
 	/*

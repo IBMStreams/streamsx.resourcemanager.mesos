@@ -347,7 +347,7 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 			
 			
 			// Validate the State.  Required for failover situations, but never hurts to run it.
-			validateState();
+			_state.validateState();
 	
 			LOG.debug("StreamsMesosResourceFramework.initialize() complete");
 		} catch (StreamsMesosException e) {
@@ -705,6 +705,7 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 		LOG.debug("Creating new MesosSchedulerDriver...");
 		FrameworkInfo fwInfo = getFrameworkInfo();
 		_driver = new MesosSchedulerDriver(_scheduler, fwInfo, mesosMaster);
+		_scheduler.setSchedulerDriver(_driver);
 
 		LOG.debug("About to start the mesos scheduler driver...");
 		Protos.Status driverStatus = _driver.start();
@@ -981,18 +982,7 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 		uriList.add(uriBuilder.build());
 		LOG.debug("Created URI");
 	}
-	
-	
-	
-	///////////////////////////////////////////
-	///   F A I L O V E R   S U P P O R T   ///
-	///////////////////////////////////////////
-	
-	// Validate that the State, Streams, and Mesos are in sync
-	private void validateState() {
-		LOG.trace("!!! validateState");
-		
-	}
+
 	
 	
 	

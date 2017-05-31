@@ -62,8 +62,10 @@ public class StreamsMesosScheduler implements Scheduler {
 		_manager = manager;
 		_state = state;
 	}
-
 	
+	public void setSchedulerDriver(SchedulerDriver schedulerDriver) {
+		_schedulerDriver = schedulerDriver;
+	}
 	
 	public String getLastErrorMessage() {
 		return _lastErrorMessage;
@@ -345,18 +347,34 @@ public class StreamsMesosScheduler implements Scheduler {
 	// Tell Mesos we do not want offers (until we revive them)
 	// No reason to keep getting offers until we have a resource request
 	public void supressOffers() {
-		LOG.debug("Calling _schedulerDriver.supressOffers()");
-		Protos.Status status = _schedulerDriver.suppressOffers();
-		setReceivingOffers(false);
-		LOG.debug("supressOffers returned driver status: " + status.toString());
+		try {
+			LOG.debug("Calling _schedulerDriver.supressOffers()");
+			Protos.Status status = _schedulerDriver.suppressOffers();
+			setReceivingOffers(false);
+			LOG.debug("supressOffers returned driver status: " + status.toString());
+		} catch (Exception e) {
+			LOG.error("supressOffers Exception: " + e);
+			e.printStackTrace();
+		}
 	}
 	
 	// Tell Mesos we we want to start receiving offers
 	public void reviveOffers() {
-		LOG.debug("Calling _schedulerDriver.reviveOffers()");
-		Protos.Status status = _schedulerDriver.reviveOffers();
-		setReceivingOffers(true);
-		LOG.debug("reviveOffers returned driver status: " + status.toString());
+		try {
+			LOG.debug("Calling _schedulerDriver.reviveOffers()");
+			Protos.Status status = _schedulerDriver.reviveOffers();
+			setReceivingOffers(true);
+			LOG.debug("reviveOffers returned driver status: " + status.toString());
+		} catch (Exception e) {
+			LOG.error("reviveOffers Exception: " + e);
+			e.printStackTrace();
+		}
+	}
+	
+	public void reconcileTasks() {
+		// Use implicit reconciliation so we can cancels tasks we no longer no about
+		List<TaskStatus> emptyTaskList = new ArrayList<>();
+		_schedulerDriver.reconcileTasks(emptyTaskList);
 	}
 
 }

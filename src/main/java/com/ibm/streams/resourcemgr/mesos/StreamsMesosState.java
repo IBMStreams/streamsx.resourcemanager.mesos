@@ -78,6 +78,20 @@ public class StreamsMesosState {
 	// NOTE: We only handle a single Controller client at this time
 	private ClientInfo _clientInfo;
 	
+	// Reconciling Flag
+	// When there is a failover of the this framework (resource manager) or Mesos (reregistration call to Scheduler)
+	// task reconciliation should occur as part of verifying the state of the system
+	// The state of reconciliation is controlled by this variable to prevent multiple reconciliations from occuring
+	// at the same time
+	private boolean _reconciling = false;
+	
+	// Reconcile List
+	private List<StreamsMesosResource> _reconcileResources;
+	
+	// Reconcile Start and LastUpdate
+	private long _reconcileStartMillis;
+	private long _reconcileLastUpdateMillis;
+	
 	/**
 	 * Constructor
 	 */
@@ -91,6 +105,7 @@ public class StreamsMesosState {
 		_persistence = _manager.getResourcePersistenceManager();
 		_persistence.connect();
 		_clientInfo = null;
+		_reconciling = false;
 
 		// May be failover so retrieve any State that exists
 		retrieveResourceState();
@@ -99,6 +114,18 @@ public class StreamsMesosState {
 	
 	public void setScheduler(StreamsMesosScheduler _scheduler) {
 		this._scheduler = _scheduler;
+	}
+	
+	public void setReconciling() {
+		_reconciling = true;
+	}
+	
+	public void clearReconciling() {
+		_reconciling = false;
+	}
+	
+	public boolean isReconciling() {
+		return _reconciling;
 	}
 
 	// Create a new SMR and put it proper containers
@@ -405,7 +432,28 @@ public class StreamsMesosState {
 			taskSlaveIP = taskStatus.getContainerStatus().getNetworkInfos(0).getIpAddresses(0).getIpAddress();
 		} catch (Exception e) {}
 		
-		StreamsMesosResource smr = getResourceByTaskId(taskId);
+		StreamsMesosResource smr = getResourceByTaskId(taskId); 
+		
+		
+		// Handle Reconciliation!!
+		TaskStatus.Reason r = taskStatus.getReason();
+		LOG.trace("Checking for reconciliation: isReconciling: " + isReconciling() + ", taskStatus.getReason(): " + r.toString());
+		if (isReconciling() && (taskStatus.getReason() == TaskStatus.Reason.REASON_RECONCILIATION)) {
+			_reconcileLastUpdateMillis = System.currentTimeMillis();
+			LOG.trace("   !!! Reconciliation Task Status Update, taskId: " + taskStatus.getTaskId().getValue());
+			// If we do not know about this task we need to remove it
+			if (smr == null) {
+				LOG.trace("   ***!!!*** Reconciliation found task (" + taskStatus.getTaskId().getValue() + ") we do not know about, killing it...");
+				_scheduler.killTask(taskStatus.getTaskId());
+			} else {
+				// We know about it, so remove it from the reconciliation list and let the status update occur as normal
+				_reconcileResources.remove(smr);
+			}
+		}
+		
+		
+		
+		
 
 		if (smr != null) {
 			oldResourceState = smr.getResourceState();
@@ -545,6 +593,70 @@ public class StreamsMesosState {
 			LOG.info("releaseAllResources: Unknown client (" + client.getClientId() + 
 					"), nothing to do.");
 		}
+	}
+	
+	
+	///////////////////////////////////////////////////////////////
+	///   S T A T E   &   T A S K   R E C O N C I L I A T I O N   
+	///////////////////////////////////////////////////////////////
+	
+	public void validateState() {
+		LOG.trace("!!! StreamsMesosState.validateState()");
+		if (isReconciling()) {
+			LOG.trace("!!! Already reconciling");
+			return;
+		}  else {
+			setReconciling();
+		}
+	
+		// Suspend offers
+		_scheduler.supressOffers();
+		
+		// Retrieve State
+		LOG.trace("   validateState().retrieveResourceState()");
+		retrieveResourceState();
+		
+		// Prune old/dead resources if any
+		LOG.trace("Pruning old resources");
+		for (StreamsMesosResource smr : getAllResources().values()) {
+			if (smr.isTerminal()) {
+				LOG.trace("   SMR: " + smr.getId() + "is terminal, removing from state");
+				deleteResource(smr.getId(),smr.getClientId());
+			}
+		}		
+		
+		// Create our reconciliation list 
+		_reconcileResources = new ArrayList<>();
+		for (StreamsMesosResource smr : getAllResources().values()) {
+			_reconcileResources.add(smr);
+		}
+		
+		// Tell Mesos Schedulre to reconcile all tasks (implicit reconciliation)
+		_reconcileStartMillis = System.currentTimeMillis();
+		_reconcileLastUpdateMillis = 0;
+		long reconcileMaxMillis = StreamsMesosConstants.MESOS_TASK_RECONCILE_MAXWAIT * 1000;
+		int reconIter = 0;
+		while (((System.currentTimeMillis() - _reconcileStartMillis) < reconcileMaxMillis) && !_reconcileResources.isEmpty()) {
+			LOG.trace("  Reconcile loop " + reconIter + "...");
+			_scheduler.reconcileTasks();
+			// sleep a number of millis and then check.. using exponential backoff
+			Utils.sleepABit(2^(++reconIter) * 1000);
+		}
+		
+		// Finished waiting, either reconciled all or some are left
+		if (!_reconcileResources.isEmpty()) {
+			LOG.trace("   Reconcile loop ended and still have resoures we did not hear about");
+			for (StreamsMesosResource smr : _reconcileResources) {
+				LOG.trace("      smr id: " + smr.getId());
+				smr.stop();
+			}
+		} else {
+			LOG.trace("   Reconciling completed!!");
+		}
+		
+		clearReconciling();
+		// Revive offers
+		_scheduler.reviveOffers();
 	}
 	
 	
@@ -810,6 +922,33 @@ public class StreamsMesosState {
     	}
     	
     	return smr;
+    }
+    
+    // Delete the resource from state, assumes it is safe to do this
+    // e.g. tasks no longer exist or have been removed
+    private void deleteResource(String resourceId, String clientId) {
+    	if (resourceId != null) {
+    		
+    		// _allResources & _requestedResources
+    		if (_allResources.containsKey(resourceId)) {
+    			StreamsMesosResource smr = _allResources.get(resourceId);
+    			
+    			if (_requestedResources.contains(smr)) {
+    				_requestedResources.remove(smr);
+    			}
+    			_allResources.remove(resourceId);
+    		}
+    		
+    		// <resmgr>/requestedResources/<resourceId>
+    		deleteResourceRequest(resourceId);
+    		
+    		// Delete it from the client index
+    		// <resmgr>/clients/<clientId>/<resourceId>
+    		deletePath(getClientResourcePath(clientId,resourceId));
+    		
+    		// <resmgr>/resources/<resourceId>
+    		deletePath(getResourcePath(resourceId));
+    	}
     }
     
     private void persistResourceRequest(String resourceId) {

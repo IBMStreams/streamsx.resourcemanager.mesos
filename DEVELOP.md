@@ -20,11 +20,12 @@
 
 # 1.0 Release (failover and high availability:
 * Handle Scheduler/Framework Failover
-	* Leader Election and Framework ID reuse - DONE
+	* DONE - Leader Election and Framework ID reuse - DONE
 	* Restore/Validate State
 	* Reconcile with Mesos
 * Persistent State manager - see Symphony Resource Manager
-	* ValidateState
+	* DONE - Save State
+	* Validate State
 * Handle Mesos Master Failover
     * Handle call to reregistered() on the scheduler	
 * Multiple copies of resource manager running and stop command issued
@@ -33,7 +34,7 @@
 	* Should it allow more than one to run on one host?
 	* Talked to Steve H.  Agrees that --hosts should allow host[:port] to stop if multiple on same host
 	* for now it stops both
-* Run using restart.sh like streams-on-symphony with option of running in foreground
+* DONE - Run using restart.sh like streams-on-symphony with option of running in foreground
 * Prevent Shutdown while resources are allocated unless --force used
 * Timout waiting for task status changes
     * If a task is waiting to be running or terminal state for more than X amount of time
@@ -78,6 +79,14 @@
 	../clients
 	../clients/<clientId>
 	../clients/<clientId>/<resourceId>  -- Index entry that resource was for given client
+	../nextId/ -- Properties of ID counters for resources and tasks
+	
+## Validate State
+* Should be done on Framework (Resource Manager) Failover and Mesos Master Failover
+	* Handle framework failover as part of initialize() call on ResourceManager
+	* Handle mesos master failover in scheduler...TBD
+
+	
 	
 ## Failover logic
 	if !reconciling
