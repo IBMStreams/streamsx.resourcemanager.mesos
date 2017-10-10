@@ -402,12 +402,22 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 	@Override
 	public void close() {
 		LOG.info("Streams Mesos Resource Manager shutting down at the request of the Streams Resource Server");
-		if (_driver != null) {
-			LOG.debug("stopping the mesos driver...");
-			Protos.Status driverStatus = _driver.stop();
-			LOG.debug("...driver stopped, status: " + driverStatus.toString());
+		if (!standByExists()) {
+						
+			LOG.trace("  No standby servers exist, Shutdown Streams Mesos scheduler/framework");
+			LOG.trace("  TODO: Need to revoke resources currently used");
+			LOG.trace("  TODO: Need to ensure state is cleared from persistence");
+			if (_driver != null) {
+				LOG.debug("    stopping the mesos driver...");
+				Protos.Status driverStatus = _driver.stop();
+				LOG.debug("    ...driver stopped, status: " + driverStatus.toString());
+			}
+			LOG.info("Streams Mesos Resource Manager shutdown complete");
+		} 
+		// have standby
+		else {
+			LOG.trace("  Standby exists!!, not doing anything");
 		}
-		LOG.info("Streams Mesos Resource Manager shutdown complete");
 	}
 	
 	
@@ -638,7 +648,7 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 	@Override
 	public void error(String message) {
 		//super.error(message);
-		LOG.error("Error received from StreamsResourceServer: " + message);
+		LOG.error("Error(String) received from StreamsResourceServer: " + message);
 	}
 
 	/* (non-Javadoc)
@@ -648,8 +658,10 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 	public void error(Throwable throwable) {
 		//super.error(throwable);
 		if (throwable != null) {
-			LOG.error("Error received from StreamsResourceServer: " + throwable.getMessage());
+			LOG.error("Error(Throwable) received from StreamsResourceServer: " + throwable.getMessage());
+			LOG.error("  Stack trace...");
 			throwable.printStackTrace();
+			LOG.error("  End stack trace");;
 		}
 	}
 
@@ -659,7 +671,7 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 	@Override
 	public void trace(String message) {
 		//super.trace(message);
-		LOG.debug("Streams: " + message);
+		LOG.debug("Trace call from Streams: " + message);
 
 	}
 
@@ -819,6 +831,11 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 		long endTime = System.currentTimeMillis() + (waitTimeSecs * 1000);
 
 		// Wait and poll to see if any are allocated in the given time
+		// Keep track of which ones we have counted as running
+		Map<String, Boolean> countedMap = new HashMap<String, Boolean>();
+		for (StreamsMesosResource smr : newAllocationRequests) {
+			countedMap.put(smr.getId(), Boolean.FALSE);
+		}
 		int runningCount = 0;
 		while (waitTimeSecs < 0 || System.currentTimeMillis() < endTime) {
 			synchronized (this) {
@@ -829,8 +846,15 @@ public class StreamsMesosResourceManager extends ResourceManagerAdapter {
 					// We use a minimum duration to prevent reporting quick failures as allocated, only to have to turn around
 					// and revoke them.  This is usually only in the case of a slave not configured properly (e.g. Streams not found)
 					if (smr.isRunning() && (smr.getResourceStateDurationSeconds() > _waitAllocatedSecs)) {
-						LOG.debug("Resource " + smr.getId() + " Mesos task has been running longer than " + _waitAllocatedSecs + ".  Will notify after waiting for all requests.");
-						runningCount++;
+						LOG.debug("Resource " + smr.getId() + " Mesos task has been running longer than " + _waitAllocatedSecs + " seconds.  Will notify after waiting for all requests.");
+						// Increment counter if not already counted
+						if (!((Boolean)(countedMap.get(smr.getId()))).booleanValue()) {
+							LOG.trace("We have not marked this task as counted yet, so increment runningCount");
+							runningCount++;
+							countedMap.put(smr.getClientId(), Boolean.TRUE);
+						} else {
+							LOG.trace("We already counted this, so do not increment running");
+						}
 					}
 				}
 				LOG.trace("Allocated Count: " + runningCount);

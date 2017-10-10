@@ -434,23 +434,26 @@ public class StreamsMesosState {
 		
 		StreamsMesosResource smr = getResourceByTaskId(taskId); 
 		
-		
-		// Handle Reconciliation!!
-		TaskStatus.Reason r = taskStatus.getReason();
-		LOG.trace("Checking for reconciliation: isReconciling: " + isReconciling() + ", taskStatus.getReason(): " + r.toString());
-		if (isReconciling() && (taskStatus.getReason() == TaskStatus.Reason.REASON_RECONCILIATION)) {
-			_reconcileLastUpdateMillis = System.currentTimeMillis();
-			LOG.trace("   !!! Reconciliation Task Status Update, taskId: " + taskStatus.getTaskId().getValue());
-			// If we do not know about this task we need to remove it
-			if (smr == null) {
-				LOG.trace("   ***!!!*** Reconciliation found task (" + taskStatus.getTaskId().getValue() + ") we do not know about, killing it...");
-				_scheduler.killTask(taskStatus.getTaskId());
-			} else {
-				// We know about it, so remove it from the reconciliation list and let the status update occur as normal
-				_reconcileResources.remove(smr);
+		if (taskStatus.hasMessage()) {
+			LOG.trace("Task status has message: " + taskStatus.getMessage());
+		}
+		// Handle Reconciliation!!, If there is no reason, then it is not a reconciliation task status
+		if (taskStatus.hasReason()) {
+			TaskStatus.Reason r = taskStatus.getReason();
+			LOG.trace("Task status has reason, checking for reconciliation: isReconciling: " + isReconciling() + ", taskStatus.getReason(): " + r.toString());
+			if (isReconciling() && (taskStatus.getReason() == TaskStatus.Reason.REASON_RECONCILIATION)) {
+				_reconcileLastUpdateMillis = System.currentTimeMillis();
+				LOG.trace("   !!! Reconciliation Task Status Update, taskId: " + taskStatus.getTaskId().getValue());
+				// If we do not know about this task we need to remove it
+				if (smr == null) {
+					LOG.trace("   ***!!!*** Reconciliation found task (" + taskStatus.getTaskId().getValue() + ") we do not know about, killing it...");
+					_scheduler.killTask(taskStatus.getTaskId());
+				} else {
+					// We know about it, so remove it from the reconciliation list and let the status update occur as normal
+					_reconcileResources.remove(smr);
+				}
 			}
 		}
-		
 		
 		
 		
@@ -631,16 +634,18 @@ public class StreamsMesosState {
 			_reconcileResources.add(smr);
 		}
 		
-		// Tell Mesos Schedulre to reconcile all tasks (implicit reconciliation)
+		// Tell Mesos Scheduler to reconcile all tasks (implicit reconciliation)
 		_reconcileStartMillis = System.currentTimeMillis();
 		_reconcileLastUpdateMillis = 0;
 		long reconcileMaxMillis = StreamsMesosConstants.MESOS_TASK_RECONCILE_MAXWAIT * 1000;
 		int reconIter = 0;
 		while (((System.currentTimeMillis() - _reconcileStartMillis) < reconcileMaxMillis) && !_reconcileResources.isEmpty()) {
-			LOG.trace("  Reconcile loop " + reconIter + "...");
+			LOG.trace("  Reconcile loop " + reconIter + ", calling _scheduler.reconcileTasks() ...");
 			_scheduler.reconcileTasks();
 			// sleep a number of millis and then check.. using exponential backoff
+			LOG.trace("  Sleep...");
 			Utils.sleepABit(2^(++reconIter) * 1000);
+			LOG.trace("  ...Woke, # tasks waiting to be reconciled: " + _reconcileResources.size());
 		}
 		
 		// Finished waiting, either reconciled all or some are left

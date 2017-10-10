@@ -5,7 +5,7 @@ One area that has been lacking in the development of the Streams Mesos Resource 
 
 Hopefully this can be added in a future release cycle.
 
-## Mnaual Tests
+## Manual Tests
 These are not meant to provide complete testing coverage.  
 They are scenarios that need to be met in development to provide a 1.0 version of this resource manager.
 Many of them would have multiple sub test cases with very different configurations and parameters
@@ -54,6 +54,34 @@ Many of them would have multiple sub test cases with very different configuratio
 	and return resources when you get around to it or when they suddenly become available. 
 	So if you support these types of scenarios you would want to return place holder descriptors 
 	and then eventually notify that resources are available.
+	
+HA / FAILOVER Tests
+-------------------
+1) Resource Manager Failover / HA
+	Kill Resource Manager - Simple failover - PASSED (same node, different node)
+	Running 2 copies of streams-on-mesos (mrm)
+	Start Domain
+	Kill 1 copy of mrm
+	Verify 2nd mrm takes over
+	streamtool getdomainstate works
+	streams-on-mesos getresourcestate works
+	
+2) Mesos Slave Failure
+	test 1: Kill mesos slave when there are two or more resources using that slave (Caught an issue where we tried to launch two tasks against the same offer with separate launchTask calls)
+   Run Resource Manager
+   Start domain
+   Start Instance with 3 resourceSpecs (in our case, 2 will get assigned to one host)
+   Kill Mesos slave process on that host
+   Verify: streams notified and revokes 2 resources, slave restarts (mesos does this), streams requests 2 resources, they are satisifed one at a time
+   
+   test 2: Domain with highAvailability=2, Instance highAvailability=2 with 2 resources tagged application,management, 1 application running
+   	Kill slave that contained 1 domain resource and 1 instance resource
+   	Job kept running
+   	Everything recovered!!
+	
+	
+
+
 	
 Feature Tests
 -------------

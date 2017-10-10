@@ -217,6 +217,7 @@ public class StreamsMesosScheduler implements Scheduler {
 			
 			// Extract the resource info from the offer.
 			// Loop through resources in this offer
+			// If there are multiple cpu or memory resources, it is because they are from different roles (don't add them up)
 			for (Resource r : offer.getResourcesList()) {
 				if (r.getName().equals("cpus")) {
 					LOG.trace("      CPU RESOURCE: {role: " + r.getRole() +
@@ -251,6 +252,9 @@ public class StreamsMesosScheduler implements Scheduler {
 			
 			// Not packing multiple launches into an offer at this time so that we spread
 			// the resources across multiple Mesos slaves.
+			// We will break the loop when an offer has been accepted and a task launched.
+			// If there are still requests in the list, they can be satisfied when the offer is made again
+			// minus the resources used by the first one we launch.
 			for (StreamsMesosResource smr : newRequestList) {
 			
 				LOG.debug("Resource Request Available to compare to offer:");
@@ -272,7 +276,9 @@ public class StreamsMesosScheduler implements Scheduler {
 					// Tell resource manager we have satisfied the request and
 					// status
 					_state.taskLaunched(smr.getId());
-					//_state.updateResource(smr.getId(), StreamsMesosResource.ResourceState.LAUNCHED, StreamsMesosResource.TaskCompletionStatus.NONE);	
+					// Break out of the loop
+					LOG.trace("Breaking out of loop since we have launched a task on this offer");
+					break;
 
 				} else {
 					LOG.debug("Offer did not meet requirements, maybe the next offer will.");
@@ -374,6 +380,7 @@ public class StreamsMesosScheduler implements Scheduler {
 	public void reconcileTasks() {
 		// Use implicit reconciliation so we can cancels tasks we no longer no about
 		List<TaskStatus> emptyTaskList = new ArrayList<>();
+		LOG.trace("  _scheduler.reconcileTasks calling _schedulerDriver.reconcileTasks(emptyTaskList) ...");
 		_schedulerDriver.reconcileTasks(emptyTaskList);
 	}
 

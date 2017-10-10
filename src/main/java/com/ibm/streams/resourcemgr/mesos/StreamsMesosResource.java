@@ -365,8 +365,8 @@ class StreamsMesosResource {
 		// Source streams install path
 		cmdBuffer.append(";source StreamsLink/bin/streamsprofile.sh");
 		cmdBuffer.append("; env > env.out");
-		// Verify Streamtool version
-		cmdBuffer.append(";streamtool version");
+		// Verify Streamtool version - REMOVED BECAUSE ROOT USER CANNOT RUN IT
+		// cmdBuffer.append(";streamtool version");
 		// Start Streams Controller
 		cmdBuffer.append(";" + ResourceManagerUtilities.getStartControllerCommand("$PWD/StreamsLink", getZkConnect(),
 				getDomainId(), getDescriptor(), getTags(), false, isMaster()));
@@ -461,6 +461,7 @@ class StreamsMesosResource {
 		//case STOPPING:
 		case STOPPED:
 		case FAILED:
+			LOG.trace("   Nothing to do becuase resource state was already one of (NEW,STOPPED, or FAILED) (e.g. Streams was finished with it)");
 			return; // nothing to do
 		default:
 			break;
