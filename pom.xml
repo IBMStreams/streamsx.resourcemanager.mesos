@@ -27,7 +27,6 @@ under the License.
   <description>IBM Streams Resource Manager as a Mesos Framework</description>
   <properties>
   	<hadoop.version>2.6.0</hadoop.version>
-  	<streams.dir>${env.STREAMS_INSTALL}</streams.dir>
   	<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   	<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
   </properties>
@@ -57,14 +56,14 @@ under the License.
   		<artifactId>libstreamsruntime</artifactId>
   		<version>1.0</version>
   		<scope>system</scope>
-  		<systemPath>${streams.dir}/lib/com.ibm.streams.resourcemgr.jar</systemPath>
+  		<systemPath>${STREAMS_INSTALL}/lib/com.ibm.streams.resourcemgr.jar</systemPath>
   	</dependency>
   	<dependency>
   		<groupId>com.ibm.streams.runtime</groupId>
   		<artifactId>libstreamsruntimeutils</artifactId>
   		<version>1.0</version>
   		<scope>system</scope>
-  		<systemPath>${streams.dir}/lib/com.ibm.streams.resourcemgr.utils.jar</systemPath>
+  		<systemPath>${STREAMS_INSTALL}/lib/com.ibm.streams.resourcemgr.utils.jar</systemPath>
   	</dependency>
   	<dependency>
   		<groupId>jdk.tools</groupId>
@@ -89,7 +88,7 @@ under the License.
   	<dependency>
   		<groupId>com.fasterxml.jackson.core</groupId>
   		<artifactId>jackson-databind</artifactId>
-  		<version>2.7.0</version>
+  		<version>2.9.7</version>
   	</dependency>
   </dependencies>
   <build>
