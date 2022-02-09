@@ -26,7 +26,7 @@ under the License.
   <name>streams-on-mesos</name>
   <description>IBM Streams Resource Manager as a Mesos Framework</description>
   <properties>
-  	<hadoop.version>2.6.0</hadoop.version>
+  	<hadoop.version>2.10.1</hadoop.version>
   	<streams.dir>${env.STREAMS_INSTALL}</streams.dir>
   	<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   	<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
